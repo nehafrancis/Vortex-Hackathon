@@ -1,0 +1,77 @@
+#ensemble method python code for object detection using YOLO V4 and faster RCNN with adaboost classifier.
+
+import cv2
+import numpy as np
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.tree import DecisionTreeClassifier
+from keras.models import load_model
+
+# Load the YOLO V4 and Faster R-CNN models
+yolo_model = load_model('yolo_v4.h5')
+frcnn_model = load_model('faster_rcnn.h5')
+
+# Define the positive and negative image labels
+pos_label = 1
+neg_label = 0
+
+# Extract features from the positive and negative images using Haar cascades
+face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+# Define the number of weak classifiers and the maximum depth of the decision trees
+n_estimators = 50
+max_depth = 1
+
+# Create the decision tree classifier for the AdaBoost algorithm
+dt = DecisionTreeClassifier(max_depth=max_depth)
+
+# Create the AdaBoost classifier
+ada = AdaBoostClassifier(base_estimator=dt, n_estimators=n_estimators)
+
+# Load the test image for detection
+test_img = cv2.imread('test.jpg')
+
+# Detect objects in the test image using YOLO V4
+yolo_results = yolo_model.predict(test_img)
+
+# Detect objects in the test image using Faster R-CNN
+frcnn_results = frcnn_model.predict(test_img)
+
+# Combine the results from YOLO V4 and Faster R-CNN
+results = np.concatenate((yolo_results, frcnn_results), axis=1)
+
+# Create training data and labels for the AdaBoost classifier
+data = []
+labels = []
+
+for (x, y, w, h) in results:
+    roi = test_img[y:y+h, x:x+w]
+    roi_features = cv2.resize(roi, (24, 24))
+    roi_features = roi_features.reshape(1, -1)
+    prediction = ada.predict(roi_features)
+    if prediction == pos_label:
+        data.append(roi_features)
+        labels.append(pos_label)
+
+# Convert the training data and labels to numpy arrays
+data = np.array(data)
+labels = np.array(labels)
+
+# Train the AdaBoost classifier on the training data and labels
+ada.fit(data.reshape(data.shape[0], -1), labels)
+
+# Detect objects in the test image using the ensemble method
+test_features = face_cascade.detectMultiScale(test_img)
+for (x, y, w, h) in test_features:
+    roi = test_img[y:y+h, x:x+w]
+    roi_features = cv2.resize(roi, (24, 24))
+    roi_features = roi_features.reshape(1, -1)
+    prediction = ada.predict(roi_features)
+    if prediction == pos_label:
+        cv2.rectangle(test_img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+    else:
+        cv2.rectangle(test_img, (x, y), (x+w, y+h), (0, 0, 255), 2)
+
+# Show the test image with the detected objects
+cv2.imshow('Object Detection', test_img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
